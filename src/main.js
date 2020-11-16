@@ -1,114 +1,89 @@
 import chalk from 'chalk';
 import execa from 'execa';
-import fs from 'fs';
 import gitignore from 'gitignore';
 import Listr from 'listr';
 import ncp from 'ncp';
+import fs from 'fs';
 import path from 'path';
 import { projectInstall } from 'pkg-install';
 import license from 'spdx-license-list/licenses/MIT';
 import { promisify } from 'util';
+import mkdirp from 'mkdirp';
+import Mustache from 'mustache'
+import request from 'request';
+import cheerio from 'cheerio';
+import TurndownService from 'turndown';
 
-const access = promisify(fs.access);
-const writeFile = promisify(fs.writeFile);
-const copy = promisify(ncp);
-const writeGitignore = promisify(gitignore.writeFile);
+function get_date(){
+  let date_ob = new Date();
 
-async function copyTemplateFiles(options) {
-  return copy(options.templateDirectory, options.targetDirectory, {
-    clobber: false,
-  });
+  // current date
+  // adjust 0 before single digit date
+  let date = ("0" + date_ob.getDate()).slice(-2);
+
+  // current month
+  let month = ("0" + (date_ob.getMonth() + 1)).slice(-2);
+
+  // current year
+  let year = date_ob.getFullYear();
+
+  // current hours
+  let hours = date_ob.getHours();
+
+  // current minutes
+  let minutes = date_ob.getMinutes();
+
+  // current seconds
+  let seconds = date_ob.getSeconds();
+
+  // prints date in YYYY-MM-DD format
+  return year + "-" + month + "-" + date;
 }
 
-async function createGitignore(options) {
-  const file = fs.createWriteStream(
-    path.join(options.targetDirectory, '.gitignore'),
-    { flags: 'a' }
-  );
-  return writeGitignore({
-    type: 'Node',
-    file: file,
-  });
-}
-
-async function createLicense(options) {
-  const targetPath = path.join(options.targetDirectory, 'LICENSE');
-  const licenseContent = license.licenseText
-    .replace('<year>', new Date().getFullYear())
-    .replace('<copyright holders>', `${options.name} (${options.email})`);
-  return writeFile(targetPath, licenseContent, 'utf8');
-}
-
-async function initGit(options) {
-  const result = await execa('git', ['init'], {
-    cwd: options.targetDirectory,
-  });
-  if (result.failed) {
-    return Promise.reject(new Error('Failed to initialize git'));
-  }
-  return;
+function format_title(title) {
+  return title.toLocaleLowerCase().split(" ").join("-")
 }
 
 export async function createProject(options) {
   options = {
     ...options,
-    targetDirectory: options.targetDirectory || process.cwd(),
-    email: 'hi@dominik.dev',
-    name: 'Dominik Kundel',
+	date: get_date(),
   };
 
-  const fullPathName = new URL(import.meta.url).pathname;
-  const templateDir = path.resolve(
-    fullPathName.substr(fullPathName.indexOf('/')),
-    '../../templates',
-    options.template.toLowerCase()
-  );
-  options.templateDirectory = templateDir;
+  console.log(options)
+  const formatted_title = format_title(options.title)
+  const folder = "content/posts/" + formatted_title
+  var content = `---
+title: {{title}}
+date: {{date}}
+tags:`
+  var populated_content = Mustache.render(content, options)
+  options.tags.split(",").forEach( function(tag){
+	populated_content += `\n  - `+tag
+  })
+  populated_content += '\n---\n\n'
+  const filename = folder + "/index.mdx";
 
-  try {
-    await access(templateDir, fs.constants.R_OK);
-  } catch (err) {
-    console.error('%s Invalid template name', chalk.red.bold('ERROR'));
-    process.exit(1);
+  mkdirp(folder, function(err) {
+	fs.writeFile(filename, populated_content, function (err, file) {
+	  if (err) throw err;
+	  console.log('Saved1!');
+	});
+  });
+
+  if (options.old_website) {
+	request(options.old_website, { json: true }, (err, res, body) => {
+	  if (err) { return console.log(err); }
+	  const $ = cheerio.load(res.body)
+	  const old_article = $('.article_text').html();
+	  var turndownService = new TurndownService();
+	  var markdown = turndownService.turndown(old_article);
+	  var markdown = markdown.replaceAll("\\>>>", "###");
+	  var markdown = markdown.replaceAll("/static", "http://www.lessand.ro/static");
+	  fs.appendFile(filename, markdown, function (err, file) {
+		if (err) throw err;
+		console.log('Saved2!');
+	  });
+	});
   }
-
-  const tasks = new Listr(
-    [
-      {
-        title: 'Copy project files',
-        task: () => copyTemplateFiles(options),
-      },
-      {
-        title: 'Create gitignore',
-        task: () => createGitignore(options),
-      },
-      {
-        title: 'Create License',
-        task: () => createLicense(options),
-      },
-      {
-        title: 'Initialize git',
-        task: () => initGit(options),
-        enabled: () => options.git,
-      },
-      {
-        title: 'Install dependencies',
-        task: () =>
-          projectInstall({
-            cwd: options.targetDirectory,
-          }),
-        skip: () =>
-          !options.runInstall
-            ? 'Pass --install to automatically install dependencies'
-            : undefined,
-      },
-    ],
-    {
-      exitOnError: false,
-    }
-  );
-
-  await tasks.run();
-  console.log('%s Project ready', chalk.green.bold('DONE'));
-  return true;
 }

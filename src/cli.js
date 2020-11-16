@@ -2,69 +2,37 @@ import arg from 'arg';
 import inquirer from 'inquirer';
 import { createProject } from './main';
 
-function parseArgumentsIntoOptions(rawArgs) {
-  const args = arg(
-    {
-      '--git': Boolean,
-      '--yes': Boolean,
-      '--install': Boolean,
-      '-g': '--git',
-      '-y': '--yes',
-      '-i': '--install',
-    },
-    {
-      argv: rawArgs.slice(2),
-    }
-  );
-  return {
-    skipPrompts: args['--yes'] || false,
-    git: args['--git'] || false,
-    template: args._[0],
-    runInstall: args['--install'] || false,
-  };
-}
-
-async function promptForMissingOptions(options) {
-  const defaultTemplate = 'javascript';
-  if (options.skipPrompts) {
-    return {
-      ...options,
-      template: options.template || defaultTemplate,
-    };
-  }
-
+async function promptForMissingOptions() {
   const questions = [];
-  if (!options.template) {
-    questions.push({
-      type: 'list',
-      name: 'template',
-      message: 'Please choose which project template to use',
-      choices: ['javascript', 'typescript'],
-      default: defaultTemplate,
-    });
-  }
-
-  if (!options.git) {
-    questions.push({
-      type: 'confirm',
-      name: 'git',
-      message: 'Should a git be initialized?',
-      default: false,
-    });
-  }
+  questions.push({
+	type: 'input',
+	name: 'title',
+	message: 'title of the new article, e.g. "Language Models in 2020"',
+  });
+  questions.push({
+	type: 'input',
+	name: 'tags',
+	message: 'Input comma separate tags for this article, e.g "programming,music"',
+  });
+  questions.push({
+	type: 'input',
+	name: 'old_website',
+	message: 'Do you want to move this article from old website? leave empty for no or e.g. "http://www.lessand.ro/17/post"',
+  });
 
   const answers = await inquirer.prompt(questions);
   return {
-    ...options,
-    template: options.template || answers.template,
-    git: options.git || answers.git,
+    tags: answers.tags,
+    old_website: answers.old_website,
+    title: answers.title,
   };
 }
 
 export async function cli(args) {
-  let options = parseArgumentsIntoOptions(args);
-  options = await promptForMissingOptions(options);
-  await createProject(options);
+  try {
+	var options = await promptForMissingOptions();
+	await createProject(options);
+  } catch (e) {
+	console.log(e);
+  }
 }
-
-// ...

@@ -1,0 +1,52 @@
+---
+title: 1111
+date: 2020-11-16
+tags:
+  - a
+  - a
+---
+
+There is a lot of hype recently around the [GPT-3 language model](https://openai.com/blog/better-language-models/) developed by OpenAI. I will dig deeper into the architecture of this language models using PyTorch
+
+OpenAI released this [public API](https://openai.com/blog/openai-api/), that allow people to access their GPT language model. Paul Graham claims it might be the next Altair, that justify me spending the afternoon looking into it.
+
+> Maybe. It may be the Altair.
+> 
+> — Paul Graham (@paulg) [July 19, 2020](https://twitter.com/paulg/status/1284768123539906561?ref_src=twsrc%5Etfw)
+
+\### Resources
+
+I will be following the [transformer tutorial](https://pytorch.org/tutorials/beginner/transformer_tutorial.html) from PyTorch (since I use it at work), that implements the famous paper [attention is what you need](https://arxiv.org/abs/1706.03762), that AFAIK has been in 2017 the seminal work that started the new trend in NN architecture (BERT, ELM) that eventually led to GPT models from OpenAI. To go over the paper there is a nice [1h Paper Reading Group by Rachel Tatman](https://www.youtube.com/watch?v=54uLU7Nxyv8) and also a famous blog post [Illustrated Transformers](http://jalammar.github.io/illustrated-transformer/) by [Jay Alammar](https://twitter.com/JayAlammar). Another interesting blog post [The Annotated Transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html) from Stanford NLP that is the text of the paper plus additional PyTorch code from ground up.
+
+\>>> Building a Transformer model using torch.nn.TransformerEncoder
+
+The tutorial is about training a [nn.TransformerEncoder](https://pytorch.org/docs/master/generated/torch.nn.TransformerEncoder.html#torch.nn.TransformerEncoder) to assign a probability for the likelihood of a given word (or a sequence of words) to follow a sequence of words. Given the Encoder and Decoder, building the model is pretty simple, as explained in [define-the-model](https://pytorch.org/tutorials/beginner/transformer_tutorial.html#define-the-model) section.
+
+![](http://www.lessand.ro/static/imgs/transformer-1.png)
+
+We take our text input, and we add two parts to it.
+
+*   [mask = self.\_generate\_square\_subsequent\_mask(len(src))](https://github.com/pytorch/tutorials/blob/master/beginner_source/transformer_tutorial.py#L82)The most straightforward is the mask, that ensures that predictions for position _i_ depends only on the known outputs at position less than _i_ by masking those.
+*   [src = self.pos\_encoder(src)](https://github.com/pytorch/tutorials/blob/master/beginner_source/transformer_tutorial.py#L86): the second is the positional encoding, we basically can't just pass plain text to the NN, but we need to encode it with relative and absolute positional data that might look like "this is the third word in the sentence, the one before cat". The encoding is actually more complex, and done using sine and cosine functions of different frequencies.
+
+So when we fix the above, we just run our data through Encoder and Decoder and we have our Transformer! Nice :) But of course I want to understand what is inside this nn.TransformerEncoder so before running the training I will have a look inside that.
+
+\>>> Inside the Encoder: self-attention
+
+To follow what happens inside the encoder we can look at the [nn.TransformerEncoder source code](https://pytorch.org/docs/master/_modules/torch/nn/modules/transformer.html#TransformerEncoder) that has pretty decent docs. At the same time is pretty helpful to keep a look both at [Self-Attention at a High Level](http://jalammar.github.io/illustrated-transformer/) from jalammar that has a nice English words explaination of what's going on, and also at the [Attention](https://nlp.seas.harvard.edu/2018/04/03/attention.html#attention) code from the original paper. We are also at part two of the [Kaggle Reading Group](https://www.youtube.com/watch?v=VEcsf0OKhfw).
+
+The jist of the transformer is in the [TransformerEncoderLayer.forward](https://pytorch.org/docs/master/_modules/torch/nn/modules/transformer.html#TransformerEncoder) method. There we take the input sequence, and we pass it to the self attention, and then we pass it to the feed forward network. The self attention layer is implemented in [torch.nn.MultiheadAttention](https://pytorch.org/docs/master/generated/torch.nn.MultiheadAttention.html?highlight=multiheadattention#torch.nn.MultiheadAttention), where we pass key value and query in the forward pass, and we get out the embeddings.
+
+Reading the code the most surprising line was this one [self.self\_attn(src, src, src)](https://pytorch.org/docs/master/_modules/torch/nn/modules/transformer.html#TransformerEncoder), where those three arguments are respectively query, key and value. That is because query component in the self-attention equation is the matrix multiplication of the input sentence (src) by the query weights, and the same for key and values. The rest of the modules just uses the self-attention equation to output the embeddings.
+
+\>>> Inside the Encoder: multi-head
+
+The more I dive into the code (i.e. implementations details from the paper) the more everything looks more and more like alchemy: for some not-well understood reasons is better not to have only one attention layer but 8 parallels heads that are identical in architecture but obtains different weights through training. Also the method of reconciling this 8 heads after training is peculiar: we concatenate the 8 embeddings and we learn an additional weighting tensor that reduces it to a standard-size embedding that can be sent to the FNN.
+
+\>>> Visualising the inner working of transformers (BERT)
+
+After some theory I want to have an intuitive understanding of what happens inside transformer. A good approach is to examine sentence embeddings using some encoder like BERT (the name actually means Encoded Representation from Transformer). A good repo is [bert-as-a-service](https://github.com/hanxiao/bert-as-service#q-so-which-layer-and-which-pooling-strategy-is-the-best) that offer some helpful code snippets. The one I will try to use is this [inner layers dimensionality reduction](https://github.com/hanxiao/bert-as-service/blob/master/example/example7.py) script: it takes one of the internal transformer layers of BERT of size \[N\*H\] and uses PCA to project it to a 2D plan to visualise how different sentences have different embeddings.
+
+![](https://github.com/SolbiatiAlessandro/BERT_embeddings/blob/master/download%20(2).png?raw=true)
+
+The results look good. I embedded sentences from the music and computer pages of Wikipedia and I plotted their BERT representation on a 2D plane. The topic distribution looks coherent. [You can find my implementation notebook here.](https://github.com/SolbiatiAlessandro/BERT_embeddings/blob/master/pca_embeddings.ipynb)
