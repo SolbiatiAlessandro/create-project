@@ -78,8 +78,8 @@ tags:`
 	  const old_article = $('.article_text').html();
 	  var turndownService = new TurndownService();
 	  var markdown = turndownService.turndown(old_article);
-	  var markdown = markdown.replaceAll("\\>>>", "###");
-	  var markdown = markdown.replaceAll("/static", "http://www.lessand.ro/static");
+	  var markdown = markdown.replace(/\>>>/g, "###");
+	  var markdown = markdown.replace(/\/static/g, "http://www.lessand.ro/static");
 	  fs.appendFile(filename, markdown, function (err, file) {
 		if (err) throw err;
 		console.log('Saved2!');
